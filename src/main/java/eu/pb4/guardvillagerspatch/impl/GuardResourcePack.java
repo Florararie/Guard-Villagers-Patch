@@ -15,11 +15,22 @@ import java.io.IOException;
  */
 public final class GuardResourcePack {
     public static final String MOD_ID = GuardSkins.MOD_ID;
+    /** The patched mod, whose lang file names the guard. */
+    public static final String TARGET_MOD_ID = "guardvillagers";
     private static final Logger LOGGER = LoggerFactory.getLogger("guardvillagers-polymer-patch");
 
     private GuardResourcePack() {}
 
     public static void setup() {
+        // The guard's name comes from the mod's lang file, and that name is the title of the
+        // inventory screen. Without it vanilla clients read "entity.guardvillagers.guard".
+        if (PolymerResourcePackUtils.addModAssets(TARGET_MOD_ID)) {
+            LOGGER.info("Registered Guard Villagers assets as a Polymer resource pack source.");
+        } else {
+            LOGGER.error("Could not read assets from {}, guard names and advancement titles will be missing.",
+                    TARGET_MOD_ID);
+        }
+
         PolymerResourcePackUtils.RESOURCE_PACK_CREATION_EVENT.register(GuardResourcePack::build);
     }
 

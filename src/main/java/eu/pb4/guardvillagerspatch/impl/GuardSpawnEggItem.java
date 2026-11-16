@@ -16,6 +16,12 @@ import org.jetbrains.annotations.Nullable;
  */
 public class GuardSpawnEggItem implements PolymerItem {
 
+    private final Item item;
+
+    public GuardSpawnEggItem(Item item) {
+        this.item = item;
+    }
+
     @Override
     public Item getPolymerItem(ItemStack stack, PacketContext context) {
         return Items.VILLAGER_SPAWN_EGG;
@@ -29,6 +35,7 @@ public class GuardSpawnEggItem implements PolymerItem {
 
     @Override
     public void modifyBasePolymerItemStack(ItemStack out, ItemStack stack, PacketContext context, HolderLookup.Provider lookup) {
-        out.set(DataComponents.ITEM_NAME, Component.literal("Guard Spawn Egg"));
+        // The mod's lang key, now that its assets ship in the pack, so other locales work too.
+        out.set(DataComponents.ITEM_NAME, Component.translatable(this.item.getDescriptionId()));
     }
 }

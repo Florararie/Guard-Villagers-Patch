@@ -21,7 +21,7 @@ public class GuardVillagersPolymerPatch implements ModInitializer {
         PolymerEntityUtils.registerOverlay(GuardVillagers.GUARD_VILLAGER, GuardPolymerEntity::new);
 
         // The guard spawn egg shows up as a villager spawn egg.
-        PolymerItemUtils.registerOverlay(GuardVillagers.GUARD_SPAWN_EGG, new GuardSpawnEggItem());
+        PolymerItemUtils.registerOverlay(GuardVillagers.GUARD_SPAWN_EGG, new GuardSpawnEggItem(GuardVillagers.GUARD_SPAWN_EGG));
 
         // The mod's sounds are just aliases of the villager ones, so fall back to those.
         PolymerSoundEvent.registerOverlay(GuardVillagers.GUARD_AMBIENT, SoundEvents.VILLAGER_AMBIENT);
