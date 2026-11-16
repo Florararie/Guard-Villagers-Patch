@@ -5,6 +5,7 @@ import dev.sterner.guardvillagers.common.entity.GuardEntity;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
@@ -133,36 +134,51 @@ public class GuardMenu extends AbstractContainerMenu {
     }
 
     private void refreshButtons() {
-        this.buttons.setItem(FOLLOW_SLOT - GUARD_SLOTS, button(Items.LEAD,
-                this.guard.isFollowing() ? "Following" : "Staying",
-                "Click to toggle"));
+        boolean following = this.guard.isFollowing();
+        boolean patrolling = this.guard.isPatrolling();
 
-        this.buttons.setItem(PATROL_SLOT - GUARD_SLOTS, button(Items.COMPASS,
-                this.guard.isPatrolling() ? "Patrolling" : "Not patrolling",
-                "Click to toggle"));
+        this.buttons.setItem(FOLLOW_SLOT - GUARD_SLOTS, icon(Items.LEAD,
+                following ? GuardIcons.FOLLOWING : GuardIcons.STAYING,
+                text(following ? "Following" : "Staying",
+                        following ? ChatFormatting.GREEN : ChatFormatting.GRAY),
+                text("Click to toggle", ChatFormatting.DARK_GRAY)));
 
-        var status = new ItemStack(Items.GOLDEN_APPLE);
-        status.set(DataComponents.CUSTOM_NAME, plain("Health: " + Math.round(this.guard.getHealth())
-                + " / " + Math.round(this.guard.getMaxHealth())));
-        status.set(DataComponents.LORE, new ItemLore(List.of(
-                grey("Armor: " + this.guard.getArmorValue()),
-                grey(this.guard.isFollowing() ? "Following you" : "Staying in place"))));
-        this.buttons.setItem(STATUS_SLOT - GUARD_SLOTS, status);
+        this.buttons.setItem(PATROL_SLOT - GUARD_SLOTS, icon(Items.COMPASS,
+                patrolling ? GuardIcons.PATROLLING : GuardIcons.NOT_PATROLLING,
+                text(patrolling ? "Patrolling" : "Not patrolling",
+                        patrolling ? ChatFormatting.AQUA : ChatFormatting.GRAY),
+                text("Click to toggle", ChatFormatting.DARK_GRAY)));
+
+        // The mod screen draws hearts and an armour row; a chest screen has one slot for both, so
+        // the heart carries the numbers and colours itself by how hurt the guard is.
+        double health = this.guard.getHealth();
+        double maxHealth = Math.max(1.0F, this.guard.getMaxHealth());
+        double ratio = health / maxHealth;
+        var healthColor = ratio >= 0.75 ? ChatFormatting.GREEN
+                : ratio >= 0.35 ? ChatFormatting.YELLOW : ChatFormatting.RED;
+
+        this.buttons.setItem(STATUS_SLOT - GUARD_SLOTS, icon(Items.GOLDEN_APPLE, GuardIcons.HEALTH,
+                Component.translatable("guardinventory.health",
+                                Component.literal(Math.round(health) + " / " + Math.round(maxHealth)))
+                        .withStyle(style -> style.withItalic(false).withColor(healthColor)),
+                Component.translatable("guardinventory.armor", Component.literal(String.valueOf(this.guard.getArmorValue())))
+                        .withStyle(style -> style.withItalic(false).withColor(ChatFormatting.GRAY)),
+                text(following ? "Following you" : "Staying in place", ChatFormatting.DARK_GRAY)));
     }
 
-    private static ItemStack button(net.minecraft.world.item.Item item, String name, String hint) {
+    private static ItemStack icon(net.minecraft.world.item.Item item, Identifier model,
+                                  Component name, Component... lore) {
         var stack = new ItemStack(item);
-        stack.set(DataComponents.CUSTOM_NAME, plain(name));
-        stack.set(DataComponents.LORE, new ItemLore(List.of(grey(hint))));
+        // The client draws the item the component names, so the slot shows the mod's button art
+        // instead of whatever item a server-side stack had to be made of.
+        stack.set(DataComponents.ITEM_MODEL, model);
+        stack.set(DataComponents.CUSTOM_NAME, name);
+        stack.set(DataComponents.LORE, new ItemLore(List.of(lore)));
         return stack;
     }
 
-    private static Component plain(String text) {
-        return Component.literal(text).withStyle(style -> style.withItalic(false).withColor(ChatFormatting.WHITE));
-    }
-
-    private static Component grey(String text) {
-        return Component.literal(text).withStyle(style -> style.withItalic(false).withColor(ChatFormatting.GRAY));
+    private static Component text(String text, ChatFormatting color) {
+        return Component.literal(text).withStyle(style -> style.withItalic(false).withColor(color));
     }
 
     @Override

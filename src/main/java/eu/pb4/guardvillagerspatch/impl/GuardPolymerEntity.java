@@ -1,89 +1,88 @@
 package eu.pb4.guardvillagerspatch.impl;
 
 import dev.sterner.guardvillagers.common.entity.GuardEntity;
+import eu.pb4.guardvillagerspatch.impl.entity.GuardElementHolder;
 import eu.pb4.polymer.core.api.entity.PolymerEntity;
-import eu.pb4.polymer.core.api.entity.PolymerEntityUtils;
+import eu.pb4.polymer.virtualentity.api.VirtualEntityUtils;
+import eu.pb4.polymer.virtualentity.api.attachment.IdentifiedUniqueEntityAttachment;
+import eu.pb4.polymer.virtualentity.api.attachment.UniqueIdentifiableAttachment;
+import eu.pb4.polymer.virtualentity.api.data.DisplayEntityData;
+import it.unimi.dsi.fastutil.ints.IntList;
 import net.fabricmc.fabric.api.networking.v1.context.PacketContext;
-import net.minecraft.network.chat.Component;
-import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientboundAnimatePacket;
+import net.minecraft.network.protocol.game.ClientboundSetEntityLinkPacket;
+import net.minecraft.network.protocol.game.ClientboundSetPassengersPacket;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntityType;
 
 import java.util.List;
-import java.util.Optional;
+import java.util.function.Consumer;
 
 /**
- * Shows a guard to vanilla clients as a mannequin.
+ * Shows a guard to vanilla clients as its own model.
  *
- * <p>Mannequins render a player skin and their equipment, so a guard looks like an armed, armoured
- * villager guard instead of an ordinary villager: the pack gives it the mod's own guard skin for
- * its variant, and the helmet, chestplate, leggings, boots, shield and weapon it carries are
- * visible in the world.
+ * <p>The guard entity itself is sent as an invisible item display, and a virtual entity holder
+ * draws the guard's mesh on top of it, one item display per body part. Unlike a mannequin, this
+ * keeps the guard's nose, hat, shoulder pads and quiver, so an unmodded client sees a guard rather
+ * than a player.
  */
 public class GuardPolymerEntity implements PolymerEntity {
-    /** First tracked data index the guard adds on top of the vanilla mob ones. */
-    private static final int GUARD_DATA_START = 16;
-
-    private static final int NOT_COMPUTED = -2;
-    private static int profileIndex = NOT_COMPUTED;
-    private static int descriptionIndex = NOT_COMPUTED;
+    public static final Identifier MODEL = Identifier.fromNamespaceAndPath("guardvillagerspatch", "guard_model");
 
     private final GuardEntity guard;
 
     public GuardPolymerEntity(GuardEntity guard) {
         this.guard = guard;
+        IdentifiedUniqueEntityAttachment.ofTicking(MODEL, new GuardElementHolder(guard), guard);
     }
 
     @Override
     public EntityType<?> getPolymerEntityType(PacketContext context) {
-        return EntityType.MANNEQUIN;
+        return EntityType.ITEM_DISPLAY;
     }
 
     @Override
     public void modifyRawTrackedData(List<SynchedEntityData.DataValue<?>> data, ServerPlayer player, boolean initial) {
-        // The guard's own fields sit on indices a mannequin uses for its own data, so drop them.
-        data.removeIf(value -> value.id() >= GUARD_DATA_START);
-
-        int profile = profileIndex();
-        if (profile >= 0) {
-            data.add(new SynchedEntityData.DataValue<>(profile, EntityDataSerializers.RESOLVABLE_PROFILE,
-                    GuardSkins.profile(this.guard.getGuardVariant())));
-        }
-
-        // Mannequins draw a description label under themselves unless it is cleared.
-        int description = descriptionIndex();
-        if (description >= 0) {
-            data.add(new SynchedEntityData.DataValue<>(description, EntityDataSerializers.OPTIONAL_COMPONENT,
-                    Optional.<Component>empty()));
+        PolymerEntity.super.modifyRawTrackedData(data, player, initial);
+        if (initial) {
+            data.add(SynchedEntityData.DataValue.create(DisplayEntityData.TELEPORTATION_DURATION, 3));
         }
     }
 
-    private static int profileIndex() {
-        if (profileIndex == NOT_COMPUTED) {
-            profileIndex = findIndex(EntityDataSerializers.RESOLVABLE_PROFILE);
-        }
-        return profileIndex;
-    }
-
-    private static int descriptionIndex() {
-        if (descriptionIndex == NOT_COMPUTED) {
-            descriptionIndex = findIndex(EntityDataSerializers.OPTIONAL_COMPONENT);
-        }
-        return descriptionIndex;
-    }
-
-    private static int findIndex(net.minecraft.network.syncher.EntityDataSerializer<?> serializer) {
-        var defaults = PolymerEntityUtils.getDefaultSynchedEntityData(EntityType.MANNEQUIN);
-        if (defaults != null) {
-            for (int i = 0; i < defaults.length; i++) {
-                var item = defaults[i];
-                if (item != null && item.getAccessor().serializer() == serializer) {
-                    return i;
-                }
-            }
+    @Override
+    public void onEntityPacketSent(Consumer<Packet<?>> consumer, Packet<?> packet) {
+        // The client has no guard to animate; the model holder does the swinging.
+        if (packet instanceof ClientboundAnimatePacket) {
+            return;
         }
 
-        return -1;
+        var attachment = UniqueIdentifiableAttachment.get(this.guard, MODEL);
+        if (attachment == null) {
+            PolymerEntity.super.onEntityPacketSent(consumer, packet);
+            return;
+        }
+
+        var holder = (GuardElementHolder) attachment.holder();
+
+        // Passengers cannot ride an item display, so send them onto the interaction element.
+        if (packet instanceof ClientboundSetPassengersPacket passengers && passengers.getPassengers().length != 0) {
+            consumer.accept(VirtualEntityUtils.createClientboundSetPassengersPacket(
+                    this.guard.getId(), IntList.of(holder.interaction.getEntityId())));
+            consumer.accept(VirtualEntityUtils.createClientboundSetPassengersPacket(
+                    holder.interaction.getEntityId(), passengers.getPassengers()));
+            return;
+        }
+
+        // Leads need a real (if invisible) entity to attach to.
+        if (packet instanceof ClientboundSetEntityLinkPacket link) {
+            consumer.accept(VirtualEntityUtils.createClientboundSetEntityLinkPacket(
+                    holder.leadAttachment.getEntityId(), link.getDestId()));
+            return;
+        }
+
+        PolymerEntity.super.onEntityPacketSent(consumer, packet);
     }
 }

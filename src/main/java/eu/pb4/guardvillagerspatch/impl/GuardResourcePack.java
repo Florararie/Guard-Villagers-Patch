@@ -1,21 +1,29 @@
 package eu.pb4.guardvillagerspatch.impl;
 
+import eu.pb4.guardvillagerspatch.impl.entity.model.GuardModels;
 import eu.pb4.polymer.resourcepack.api.PolymerResourcePackUtils;
 import eu.pb4.polymer.resourcepack.api.ResourcePackBuilder;
+import eu.pb4.polymer.resourcepack.extras.api.ResourcePackExtras;
+import eu.pb4.polymer.resourcepack.extras.api.format.atlas.AtlasAsset;
+import eu.pb4.polymer.resourcepack.extras.api.format.item.ItemAsset;
+import eu.pb4.polymer.resourcepack.extras.api.format.item.model.BasicItemModel;
+import eu.pb4.polymer.resourcepack.extras.api.format.item.tint.MapColorTintSource;
+import net.minecraft.resources.Identifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
+import java.util.List;
 
 /**
- * Adds our bundled guard skins to the Polymer resource pack.
+ * Builds the guard's model and texture assets into the Polymer resource pack.
  *
- * <p>The skins live in this mod at {@code assets/guardvillagerspatch/textures/entity/guard/},
- * converted from the Guard Villagers guard atlas to the player skin layout.
+ * <p>The mod's own guard atlas is copied as-is, and each guard model variant writes the item models
+ * the client draws the mesh from. This runs after the initial pack creation so the mod's assets are
+ * already in the pack when the atlas is assembled.
  */
 public final class GuardResourcePack {
-    public static final String MOD_ID = GuardSkins.MOD_ID;
-    /** The patched mod, whose lang file names the guard. */
+    public static final String MOD_ID = "guardvillagerspatch";
+    /** The patched mod, whose assets carry the guard textures and name. */
     public static final String TARGET_MOD_ID = "guardvillagers";
     private static final Logger LOGGER = LoggerFactory.getLogger("guardvillagers-polymer-patch");
 
@@ -31,23 +39,35 @@ public final class GuardResourcePack {
                     TARGET_MOD_ID);
         }
 
-        PolymerResourcePackUtils.RESOURCE_PACK_CREATION_EVENT.register(GuardResourcePack::build);
+        // Each part is drawn as an item display whose model id is `<namespace>:-/<model path>`.
+        // Polymer only writes the client item definitions behind those ids
+        // (assets/<namespace>/items/-/...) for model folders registered as bridged, so without this
+        // the client cannot resolve the part models and draws vanilla's missing item for every limb.
+        ResourcePackExtras.forDefault().addBridgedModelsFolder(
+                Identifier.fromNamespaceAndPath(TARGET_MOD_ID, "entity"),
+                (model, builder) -> new ItemAsset(
+                        // The map color tint is what makes the red hurt flash applied by the entity
+                        // holder show up, instead of the component being silently ignored. It has to
+                        // default to white, else every unflashed part would be tinted dark brown.
+                        new BasicItemModel(model, List.of(new MapColorTintSource(0xFFFFFF))),
+                        new ItemAsset.Properties(true, true)));
+
+        PolymerResourcePackUtils.RESOURCE_PACK_AFTER_INITIAL_CREATION_EVENT.register(GuardResourcePack::build);
     }
 
     private static void build(ResourcePackBuilder builder) {
-        for (int variant = 0; variant < GuardSkins.VARIANT_COUNT; variant++) {
-            var path = GuardSkins.packPath(variant);
-            var source = GuardResourcePack.class.getResourceAsStream("/" + path);
-            if (source == null) {
-                LOGGER.warn("Guard skin {} is missing from this jar; that variant will use a default skin", path);
-                continue;
-            }
-
-            try (source) {
-                builder.addData(path, source.readAllBytes());
-            } catch (IOException e) {
-                LOGGER.warn("Could not add guard skin {}", path, e);
-            }
+        var atlas = AtlasAsset.builder();
+        for (var model : GuardModels.ALL) {
+            model.generateAssets(builder::addData, atlas);
         }
+
+        // The inventory screen's toggles and readouts are items, so their icons are item models too.
+        // They follow the vanilla item conventions and need no atlas entries of their own.
+        GuardIcons.generate(builder);
+
+        // The guard is drawn from item models, and item models resolve their sprites from the item
+        // atlas. Adding the same sprite to the block atlas as well makes the client log it as a
+        // duplicate and drop the item atlas copy, which leaves every part untextured.
+        builder.addData("assets/minecraft/atlases/items.json", atlas.build());
     }
 }

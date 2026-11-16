@@ -7,10 +7,8 @@ Install the patch next to Guard Villagers on the server. Nothing is needed on th
 
 ## What vanilla clients get
 
-- Guards are shown as mannequins wearing the mod's own guard textures, remapped from its guard atlas
-  to the player skin layout, so they keep the guard face, hat and tunic colours per variant instead
-  of looking like Steve. Armour, shields and weapons the guard carries render on it like they would
-  on a player, so you can tell what it is wearing and holding.
+- Guard's models and geometry have been rebuilt from the original mod using Polymer's virtual entities
+  as well as item displays for each part of the model. Animated by server tick.
 - Right-clicking a guard opens its inventory: helmet, chestplate, leggings, boots, offhand and main
   hand in one row, plus the mod's follow and patrol toggles and a readout of its health and armour.
   Every slot does something, and equipping works exactly like the original screen.
@@ -28,11 +26,6 @@ Install the patch next to Guard Villagers on the server. Nothing is needed on th
 
 ## Limitations
 
-- A vanilla client can only draw entities and geometry it already knows. The mod's guard model (a
-  taller head with a nose, a hat, shoulder pads and a quiver) cannot be sent to it, so guards use
-  the mannequin's player-shaped body. The hat and nose are painted into the skin; the modelled
-  shoulder pads and quiver cannot be shown, and the body is player shaped rather than villager
-  shaped.
 - The GUI is a one-row chest panel: no 3D guard preview, with health and armour shown on the status
   item instead of on bars.
 
@@ -43,10 +36,6 @@ gradle build
 ```
 
 The jar is written to `build/libs`.
-
-The guard skins in `src/main/resources/assets/guardvillagerspatch/textures/entity/guard/` are
-generated from Guard Villagers' own guard atlas with `python3 tools/convert_guard_skins.py`
-(needs Pillow). Previews of the result are written to `build/guard-skin-previews/`.
 
 ## License
 
