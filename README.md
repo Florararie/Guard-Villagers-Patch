@@ -1,6 +1,6 @@
 # Polymer Patch for Guard Villagers
 
-A server-side patch that lets [Guard Villagers](https://modrinth.com/mod/guard-villagers) run on servers where
+A server-side patch that lets [Guard Villagers](https://modrinth.com/mod/guard-villagers-fabricquilt) run on servers where
 players use unmodded clients. Built on [Polymer](https://polymer.pb4.eu).
 
 Install the patch next to Guard Villagers on the server. Nothing is needed on the client.
@@ -21,7 +21,7 @@ Install the patch next to Guard Villagers on the server. Nothing is needed on th
 
 - Minecraft 26.1.2, Fabric Loader 0.19.5+
 - Fabric API
-- [Guard Villagers](https://modrinth.com/mod/guard-villagers) 2.1.3+
+- [Guard Villagers](https://modrinth.com/mod/guard-villagers-fabricquilt)
 - [Polymer](https://modrinth.com/mod/polymer), including `polymer-resource-pack`
 - The Polymer resource pack must be served and accepted by clients; the guard skins live in it.
   Clients without it draw the guards with a missing skin texture.
