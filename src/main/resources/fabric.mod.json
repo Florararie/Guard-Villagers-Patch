@@ -1,0 +1,26 @@
+{
+	"schemaVersion": 1,
+	"id": "guardvillagers-polymer-patch",
+	"version": "${version}",
+	"name": "Polymer Patch for Guard Villagers",
+	"description": "Server-side-only Guard Villagers: guards, their sounds, spawn egg and inventory are virtualised so unmodded clients can see and use them.",
+	"license": "MIT",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"eu.pb4.guardvillagerspatch.GuardVillagersPolymerPatch"
+		]
+	},
+	"mixins": [
+		"guardvillagers-polymer-patch.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.1",
+		"java": ">=25",
+		"fabric-api": "*",
+		"polymer-core": ">=0.16.0",
+		"polymer-resource-pack": ">=0.16.0",
+		"guardvillagers": ">=2.1.0"
+	}
+}

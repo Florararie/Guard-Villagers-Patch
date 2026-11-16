@@ -1,0 +1,11 @@
+{
+	"required": true,
+	"package": "eu.pb4.guardvillagerspatch.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"GuardEntityMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
