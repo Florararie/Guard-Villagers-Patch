@@ -11,11 +11,16 @@ import eu.pb4.factorytools.api.virtualentity.emuvanilla.model.MeshDefinition;
 import eu.pb4.factorytools.api.virtualentity.emuvanilla.model.ModelPart;
 import eu.pb4.factorytools.api.virtualentity.emuvanilla.model.PartDefinition;
 import eu.pb4.factorytools.api.virtualentity.emuvanilla.model.PartPose;
+import eu.pb4.guardvillagerspatch.impl.GuardResourcePack;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.HumanoidArm;
+import net.minecraft.world.item.BowItem;
+import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ProjectileWeaponItem;
 
 /**
@@ -142,10 +147,11 @@ public class GuardVillagerModel extends EntityModel<GuardEntity> {
             this.leftLeg.zRot = 0.0F;
         }
 
+        // Every goal sets its use state on the server, so the holder can pose the arms from what
+        // the guard is doing right now instead of guessing from the items alone.
         float swing = guard.getAttackAnim(1.0F);
-        boolean drawing = guard.getUseItemRemainingTicks() > 0
-                && (mainHand.getItem() instanceof ProjectileWeaponItem
-                || offHand.getItem() instanceof ProjectileWeaponItem);
+        ItemStack usedStack = guard.getUseItem();
+        boolean using = guard.isUsingItem() && !usedStack.isEmpty();
 
         if (swing > 0.0F) {
             if (mainHand.isEmpty()) {
@@ -153,18 +159,16 @@ public class GuardVillagerModel extends EntityModel<GuardEntity> {
             } else {
                 AnimationUtils.swingWeaponDown(this.rightArm, this.leftArm, guard.getMainArm(), swing, guard.tickCount);
             }
-        } else if (drawing) {
-            this.rightArm.yRot = -0.1F + this.head.yRot;
-            this.rightArm.xRot = -1.5707964F + this.head.xRot;
-            this.leftArm.xRot = -0.9424779F + this.head.xRot;
-            this.leftArm.yRot = this.head.yRot - 0.4F;
-            this.leftArm.zRot = 1.5707964F;
+        } else if (using && usedStack.getItem() instanceof BowItem) {
+            this.poseBow(guard);
+        } else if (using && usedStack.getItem() instanceof CrossbowItem) {
+            this.poseCrossbowCharge(guard, usedStack);
         } else if (guard.isBlocking()) {
-            ModelPart blockingArm = this.getArm(guard.getUsedItemHand() == InteractionHand.MAIN_HAND
-                    ? guard.getMainArm()
-                    : guard.getMainArm().getOpposite());
-            blockingArm.xRot = blockingArm.xRot * 0.5F - ((float) Math.PI / 10F);
-            blockingArm.yRot = 0.0F;
+            this.poseBlock(guard);
+        } else if (CrossbowItem.isCharged(mainHand)) {
+            this.poseCrossbowHold(guard.getMainArm());
+        } else if (CrossbowItem.isCharged(offHand)) {
+            this.poseCrossbowHold(guard.getMainArm().getOpposite());
         }
 
         if (guard.kickTicks > 0) {
@@ -187,5 +191,98 @@ public class GuardVillagerModel extends EntityModel<GuardEntity> {
 
     public ModelPart getHat() {
         return this.hat;
+    }
+
+    /** Both arms on the bow, the way vanilla poses a drawn bow. */
+    private void poseBow(GuardEntity guard) {
+        HumanoidArm bowArm = armOf(guard, guard.getUsedItemHand());
+        float side = bowArm == HumanoidArm.RIGHT ? 1.0F : -1.0F;
+        ModelPart hold = this.getArm(bowArm);
+        ModelPart pull = this.getArm(bowArm.getOpposite());
+
+        hold.yRot = -0.1F * side + this.head.yRot;
+        hold.xRot = -1.5707964F + this.head.xRot;
+        pull.xRot = -0.9424779F + this.head.xRot;
+        pull.yRot = this.head.yRot - 0.4F * side;
+    }
+
+    /**
+     * The rack, the way pillagers do it: vanilla's own crossbow charge pose, which pulls the
+     * holding arm in against the chest while the other hand follows the string back as the charge
+     * fills. The helper mirrors itself for a left-handed guard.
+     */
+    private void poseCrossbowCharge(GuardEntity guard, ItemStack stack) {
+        HumanoidArm arm = armOf(guard, guard.getUsedItemHand());
+        float duration = Math.max(1, CrossbowItem.getChargeDuration(stack, guard));
+
+        AnimationUtils.animateCrossbowCharge(this.rightArm, this.leftArm, duration,
+                guard.getTicksUsingItem(), arm == HumanoidArm.RIGHT);
+    }
+
+    /** A racked crossbow is carried up and ready, again in vanilla's own illager pose. */
+    private void poseCrossbowHold(HumanoidArm arm) {
+        AnimationUtils.animateCrossbowHold(this.rightArm, this.leftArm, this.head, arm == HumanoidArm.RIGHT);
+    }
+
+    /** Vanilla's shield pose: the forearm comes across the body and the shield faces the threat. */
+    private void poseBlock(GuardEntity guard) {
+        ModelPart arm = this.getArm(armOf(guard, guard.getUsedItemHand()));
+        float side = arm == this.rightArm ? 1.0F : -1.0F;
+
+        arm.xRot = arm.xRot * 0.5F - 0.9424779F;
+        arm.yRot = -0.5235988F * side;
+    }
+
+    /**
+     * The model a held stack has to be drawn with.
+     *
+     * <p>Vanilla picks the drawn bow, the half-racked crossbow, the loaded crossbow and the raised
+     * shield with item model predicates that read the holding entity. A display entity has no
+     * entity to read, so the same choice is made here and handed over through {@code ITEM_MODEL}.
+     * Null means the stack's own model is already right.
+     */
+    public static Identifier heldItemModel(GuardEntity guard, ItemStack stack, boolean usedInHand) {
+        if (stack.isEmpty()) {
+            return null;
+        }
+        if (usedInHand && stack.getItem() instanceof BowItem) {
+            float drawn = bowDrawProgress(guard);
+            return drawn >= 0.9F ? GuardResourcePack.BOW_PULLING_2
+                    : drawn >= 0.65F ? GuardResourcePack.BOW_PULLING_1 : GuardResourcePack.BOW_PULLING_0;
+        }
+        if (usedInHand && stack.getItem() instanceof CrossbowItem) {
+            float pull = crossbowChargeProgress(guard, stack);
+            // Vanilla's last frame only starts at a full charge, which the guard's goal releases on
+            // in that same tick, so it would never be seen. Starting it where the string already
+            // looks home gives the rack the same three frames the bow has.
+            return pull >= 0.85F ? GuardResourcePack.CROSSBOW_PULLING_2
+                    : pull >= 0.58F ? GuardResourcePack.CROSSBOW_PULLING_1 : GuardResourcePack.CROSSBOW_PULLING_0;
+        }
+        if (stack.is(Items.SHIELD) && guard.isBlocking()) {
+            return GuardResourcePack.SHIELD_BLOCKING;
+        }
+        if (CrossbowItem.isCharged(stack)) {
+            return GuardResourcePack.CROSSBOW_ARROW;
+        }
+        return null;
+    }
+
+    /** Vanilla scales a bow's draw over twenty ticks. */
+    private static float bowDrawProgress(GuardEntity guard) {
+        return Mth.clamp(guard.getTicksUsingItem() / 20.0F, 0.0F, 1.0F);
+    }
+
+    /**
+     * How much of the rack is done. A crossbow's use duration is 72000 ticks, so the ticks left in
+     * the use say nothing about the charge; the ticks spent using it over the charge duration is
+     * the number vanilla's own pull predicate reads.
+     */
+    private static float crossbowChargeProgress(GuardEntity guard, ItemStack stack) {
+        int duration = Math.max(1, CrossbowItem.getChargeDuration(stack, guard));
+        return Mth.clamp(guard.getTicksUsingItem() / (float) duration, 0.0F, 1.0F);
+    }
+
+    private static HumanoidArm armOf(GuardEntity guard, InteractionHand hand) {
+        return hand == InteractionHand.MAIN_HAND ? guard.getMainArm() : guard.getMainArm().getOpposite();
     }
 }

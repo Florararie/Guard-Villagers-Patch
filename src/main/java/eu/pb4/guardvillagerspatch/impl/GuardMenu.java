@@ -17,7 +17,10 @@ import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemUseAnimation;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.ProjectileWeaponItem;
+import net.minecraft.world.item.SplashPotionItem;
 import net.minecraft.world.item.component.ItemLore;
 
 import java.util.List;
@@ -38,6 +41,8 @@ public class GuardMenu extends AbstractContainerMenu {
     };
 
     private static final int GUARD_SLOTS = 6;
+    private static final int OFFHAND_SLOT = 4;
+    private static final int MAINHAND_SLOT = 5;
     private static final int FOLLOW_SLOT = 6;
     private static final int PATROL_SLOT = 7;
     private static final int STATUS_SLOT = 8;
@@ -223,14 +228,44 @@ public class GuardMenu extends AbstractContainerMenu {
         return original;
     }
 
+    /**
+     * The guard slot a shift-clicked stack belongs in.
+     *
+     * <p>The hand slots are chosen by what the item is for, not by their position in the row, so a
+     * sword or a bow cannot be swallowed by the offhand on its way past. Anything that belongs in
+     * neither hand is left for the armour slots, and junk goes back to the player.
+     */
     private int findGuardSlotFor(ItemStack stack) {
-        for (int i = 0; i < GUARD_SLOTS; i++) {
+        int hand = isOffhandItem(stack) ? OFFHAND_SLOT
+                : isMainhandItem(stack) ? MAINHAND_SLOT : -1;
+        if (hand >= 0) {
+            Slot slot = this.slots.get(hand);
+            return slot.mayPlace(stack) && !slot.hasItem() ? hand : -1;
+        }
+
+        for (int i = 0; i < ARMOR_SLOTS.length; i++) {
             Slot slot = this.slots.get(i);
             if (slot.mayPlace(stack) && !slot.hasItem()) {
                 return i;
             }
         }
         return -1;
+    }
+
+    /** A shield or something edible, mirroring the base mod's offhand rule. */
+    private static boolean isOffhandItem(ItemStack stack) {
+        if (stack.is(Items.SHIELD)) {
+            return true;
+        }
+        ItemUseAnimation animation = stack.getUseAnimation();
+        return animation == ItemUseAnimation.EAT
+                || (animation == ItemUseAnimation.DRINK && !(stack.getItem() instanceof SplashPotionItem));
+    }
+
+    /** Durable and not wearable: swords, axes, tools, bows and crossbows. */
+    private static boolean isMainhandItem(ItemStack stack) {
+        return stack.getItem() instanceof ProjectileWeaponItem
+                || (stack.isDamageableItem() && !stack.has(DataComponents.EQUIPPABLE));
     }
 
     @Override
@@ -257,10 +292,19 @@ public class GuardMenu extends AbstractContainerMenu {
 
         @Override
         public boolean mayPlace(ItemStack stack) {
-            if (this.guardSlot < ARMOR_SLOTS.length && GuardMenu.this.guard.getEquipmentSlotForItem(stack) != this.equipmentSlot) {
+            boolean allowed = GuardVillagers.hotvChecker(GuardMenu.this.player, GuardMenu.this.guard);
+            if (!allowed) {
                 return false;
             }
-            return GuardVillagers.hotvChecker(GuardMenu.this.player, GuardMenu.this.guard);
+            if (this.guardSlot < ARMOR_SLOTS.length) {
+                return GuardMenu.this.guard.getEquipmentSlotForItem(stack) == this.equipmentSlot;
+            }
+            if (this.guardSlot == MAINHAND_SLOT) {
+                // Anything may be handed over deliberately; this is the slot every goal reads.
+                return true;
+            }
+            // Only what the guard can actually use offhand: a shield to block with, or food.
+            return isOffhandItem(stack);
         }
 
         @Override

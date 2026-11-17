@@ -12,11 +12,15 @@ import eu.pb4.polymer.virtualentity.api.ElementHolder;
 import eu.pb4.polymer.virtualentity.api.elements.InteractionElement;
 import eu.pb4.polymer.virtualentity.api.elements.ItemDisplayElement;
 import eu.pb4.polymer.virtualentity.api.elements.VirtualElement;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fStack;
@@ -195,7 +199,21 @@ public class GuardElementHolder extends ElementHolder {
      */
     private void renderHeldItem(ModelPart root, HumanoidArm arm, ItemDisplayElement element) {
         ItemStack stack = this.entity.getItemHeldByArm(arm);
-        element.setItem(stack);
+        InteractionHand hand = arm == this.entity.getMainArm()
+                ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND;
+        boolean usedInHand = this.entity.isUsingItem() && this.entity.getUsedItemHand() == hand;
+
+        // The item models vanilla would pick for a drawing bow or a racking crossbow read the
+        // holding entity, which a display does not have, so the model is chosen here instead.
+        Identifier model = GuardVillagerModel.heldItemModel(this.entity, stack, usedInHand);
+        if (model != null) {
+            ItemStack shown = stack.copy();
+            shown.set(DataComponents.ITEM_MODEL, model);
+            element.setItem(shown);
+        } else {
+            element.setItem(stack);
+        }
+
         if (stack.isEmpty()) {
             return;
         }
@@ -203,6 +221,9 @@ public class GuardElementHolder extends ElementHolder {
         STACK.pushMatrix();
         root.translateAndRotate(STACK);
         this.model.model().getArm(arm).translateAndRotate(STACK);
+
+        boolean blockingShield = stack.is(Items.SHIELD)
+                && this.entity.isBlocking() && this.entity.getUsedItemHand() == hand;
 
         STACK.rotate(Axis.XP.rotationDegrees(-90.0F));
         STACK.rotate(Axis.YP.rotationDegrees(180.0F));
@@ -213,10 +234,14 @@ public class GuardElementHolder extends ElementHolder {
         STACK.translate((left ? -1 : 1) / 16.0F, 0.125F, left ? -0.625F : -0.500F);
         // Our model space is a half turn away from the one vanilla's ItemInHandLayer constants were
         // written for (FactoryTools bakes the part models with that turn). Cancelling it after the
-        // translate leaves the grip point alone and only turns the item itself. A shield is
-        // symmetric about its face normal, so it looks right with the turn about either horizontal
-        // axis; a crossbow is not, and only the turn about local Y leaves it the right way up.
-        STACK.rotate(Axis.YP.rotationDegrees(180.0F));
+        // translate leaves the grip point alone and only turns the item itself, and only the turn
+        // about local Y leaves a crossbow the right way up. A raised shield is the exception: that
+        // turn rolls it around the forearm, so the plate leaves the vertical. Vanilla's chain without
+        // it is what holds a blocking shield the right way round, and the raised shield's own item
+        // definition supplies the mirror vanilla applies to the shield model.
+        if (!blockingShield) {
+            STACK.rotate(Axis.YP.rotationDegrees(180.0F));
+        }
 
         element.setTransformation(new Matrix4f(STACK));
         STACK.popMatrix();

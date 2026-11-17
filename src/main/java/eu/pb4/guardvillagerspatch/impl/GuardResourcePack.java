@@ -27,6 +27,22 @@ public final class GuardResourcePack {
     public static final String TARGET_MOD_ID = "guardvillagers";
     private static final Logger LOGGER = LoggerFactory.getLogger("guardvillagers-polymer-patch");
 
+    /**
+     * Ids for the states a drawn bow, a racking crossbow and a raised shield are shown in.
+     *
+     * <p>{@code minecraft:item_model} names an item definition, not a model, so each of these needs a
+     * file under {@code assets/guardvillagerspatch/items}. Vanilla's own definitions pick these
+     * states with predicates that read the holding entity, which a display entity does not have.
+     */
+    public static final Identifier BOW_PULLING_0 = heldId("guard_bow_pulling_0");
+    public static final Identifier BOW_PULLING_1 = heldId("guard_bow_pulling_1");
+    public static final Identifier BOW_PULLING_2 = heldId("guard_bow_pulling_2");
+    public static final Identifier CROSSBOW_PULLING_0 = heldId("guard_crossbow_pulling_0");
+    public static final Identifier CROSSBOW_PULLING_1 = heldId("guard_crossbow_pulling_1");
+    public static final Identifier CROSSBOW_PULLING_2 = heldId("guard_crossbow_pulling_2");
+    public static final Identifier CROSSBOW_ARROW = heldId("guard_crossbow_arrow");
+    public static final Identifier SHIELD_BLOCKING = heldId("guard_shield_blocking");
+
     private GuardResourcePack() {}
 
     public static void setup() {
@@ -55,6 +71,40 @@ public final class GuardResourcePack {
         PolymerResourcePackUtils.RESOURCE_PACK_AFTER_INITIAL_CREATION_EVENT.register(GuardResourcePack::build);
     }
 
+    /**
+     * One item definition per held-weapon state, each pointing straight at the vanilla model whose
+     * own predicate would have chosen it while held by a real entity.
+     */
+    private static void writeHeldItemModels(ResourcePackBuilder builder) {
+        for (String state : new String[]{
+                "bow_pulling_0", "bow_pulling_1", "bow_pulling_2",
+                "crossbow_pulling_0", "crossbow_pulling_1", "crossbow_pulling_2",
+                "crossbow_arrow"}) {
+            builder.addStringData("assets/" + MOD_ID + "/items/guard_" + state + ".json",
+                    "{\"model\":{\"type\":\"minecraft:model\",\"model\":\"minecraft:item/" + state + "\"}}");
+        }
+
+        // Copied from vanilla's own blocking branch: the shield is drawn by the shield special
+        // renderer, which is what keeps a patterned shield's colours and the blocking orientation.
+        // Vanilla's own definition carries a transformation here and it is load bearing: our chain
+        // already holds the item at vanilla's third person angle, so the raised shield is one quarter
+        // turn off in the mesh itself. It needs a -90 degree roll about the plate's width (a half turn,
+        // as vanilla ships, leaves the plate flat with its face to the sky) and then a half turn about
+        // the axis the chain leaves pointing up, which is what turns the painted face out instead of
+        // the handle side. The two compose into the single quaternion below, a half turn about
+        // (0, -1, 1) / sqrt(2); doing it as two separate rotations would tilt the plate again.
+        builder.addStringData("assets/" + MOD_ID + "/items/guard_shield_blocking.json",
+                "{\"model\":{\"type\":\"minecraft:special\",\"base\":\"minecraft:item/shield_blocking\","
+                        + "\"model\":{\"type\":\"minecraft:shield\"},"
+                        + "\"transformation\":{\"left_rotation\":[0.0,-0.7071068,0.7071068,0.0],"
+                        + "\"right_rotation\":[0.0,0.0,0.0,1.0],\"scale\":[1.0,1.0,1.0],"
+                        + "\"translation\":[0.0,0.0,0.0]}}}");
+    }
+
+    private static Identifier heldId(String name) {
+        return Identifier.fromNamespaceAndPath(MOD_ID, name);
+    }
+
     private static void build(ResourcePackBuilder builder) {
         var atlas = AtlasAsset.builder();
         for (var model : GuardModels.ALL) {
@@ -64,6 +114,7 @@ public final class GuardResourcePack {
         // The inventory screen's toggles and readouts are items, so their icons are item models too.
         // They follow the vanilla item conventions and need no atlas entries of their own.
         GuardIcons.generate(builder);
+        writeHeldItemModels(builder);
 
         // The guard is drawn from item models, and item models resolve their sprites from the item
         // atlas. Adding the same sprite to the block atlas as well makes the client log it as a
