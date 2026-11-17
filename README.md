@@ -1,10 +1,12 @@
-# Polymer Patch for Guard Villagers
-
-## DISCLAIMER
+# DISCLAIMER
 
 [Guard Villagers](https://modrinth.com/mod/guard-villagers-fabricquilt) does NOT have an official 26.1.2 version. This is built for my modification of it [here](https://github.com/Florararie/GuardVillagers/tree/26.1.2). This is not a 1:1 port. I have modified the behavior to better suit my server's needs.
 
 The LICENSE is MIT. You are free to apply the work of this patch to other versions. Its comprehensive enough to give a good experience elsewhere.
+
+---
+
+# Polymer Patch for Guard Villagers
 
 A server-side patch that lets [Guard Villagers](https://modrinth.com/mod/guard-villagers-fabricquilt) run on servers where
 players use unmodded clients. Built on [Polymer](https://polymer.pb4.eu).
