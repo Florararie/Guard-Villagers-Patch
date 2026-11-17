@@ -193,6 +193,18 @@ public class GuardVillagerModel extends EntityModel<GuardEntity> {
         return this.hat;
     }
 
+    public ModelPart getHead() {
+        return this.head;
+    }
+
+    public ModelPart getBody() {
+        return this.body;
+    }
+
+    public ModelPart getLeg(HumanoidArm arm) {
+        return arm == HumanoidArm.RIGHT ? this.rightLeg : this.leftLeg;
+    }
+
     /** Both arms on the bow, the way vanilla poses a drawn bow. */
     private void poseBow(GuardEntity guard) {
         HumanoidArm bowArm = armOf(guard, guard.getUsedItemHand());

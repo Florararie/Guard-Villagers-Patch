@@ -1,5 +1,6 @@
 package eu.pb4.guardvillagerspatch.impl;
 
+import eu.pb4.guardvillagerspatch.impl.entity.model.GuardArmorModels;
 import eu.pb4.guardvillagerspatch.impl.entity.model.GuardModels;
 import eu.pb4.polymer.resourcepack.api.PolymerResourcePackUtils;
 import eu.pb4.polymer.resourcepack.api.ResourcePackBuilder;
@@ -7,6 +8,8 @@ import eu.pb4.polymer.resourcepack.extras.api.ResourcePackExtras;
 import eu.pb4.polymer.resourcepack.extras.api.format.atlas.AtlasAsset;
 import eu.pb4.polymer.resourcepack.extras.api.format.item.ItemAsset;
 import eu.pb4.polymer.resourcepack.extras.api.format.item.model.BasicItemModel;
+import eu.pb4.polymer.resourcepack.extras.api.format.item.tint.DyeTintSource;
+import eu.pb4.polymer.resourcepack.extras.api.format.item.tint.ItemTintSource;
 import eu.pb4.polymer.resourcepack.extras.api.format.item.tint.MapColorTintSource;
 import net.minecraft.resources.Identifier;
 import org.slf4j.Logger;
@@ -26,6 +29,8 @@ public final class GuardResourcePack {
     /** The patched mod, whose assets carry the guard textures and name. */
     public static final String TARGET_MOD_ID = "guardvillagers";
     private static final Logger LOGGER = LoggerFactory.getLogger("guardvillagers-polymer-patch");
+    /** The colour vanilla gives leather armour that was never dyed. */
+    private static final int DEFAULT_LEATHER_COLOR = 10511680;
 
     /**
      * Ids for the states a drawn bow, a racking crossbow and a raised shield are shown in.
@@ -61,12 +66,13 @@ public final class GuardResourcePack {
         // the client cannot resolve the part models and draws vanilla's missing item for every limb.
         ResourcePackExtras.forDefault().addBridgedModelsFolder(
                 Identifier.fromNamespaceAndPath(TARGET_MOD_ID, "entity"),
-                (model, builder) -> new ItemAsset(
-                        // The map color tint is what makes the red hurt flash applied by the entity
-                        // holder show up, instead of the component being silently ignored. It has to
-                        // default to white, else every unflashed part would be tinted dark brown.
-                        new BasicItemModel(model, List.of(new MapColorTintSource(0xFFFFFF))),
-                        new ItemAsset.Properties(true, true)));
+                (model, builder) -> partAsset(model));
+
+        // The armor shells are painted with vanilla's own armor textures, which live under the
+        // minecraft namespace, so their part models do too.
+        ResourcePackExtras.forDefault().addBridgedModelsFolder(
+                Identifier.fromNamespaceAndPath("minecraft", "entity"),
+                (model, builder) -> partAsset(model));
 
         PolymerResourcePackUtils.RESOURCE_PACK_AFTER_INITIAL_CREATION_EVENT.register(GuardResourcePack::build);
     }
@@ -101,6 +107,20 @@ public final class GuardResourcePack {
                         + "\"translation\":[0.0,0.0,0.0]}}}");
     }
 
+    /**
+     * The client item definition behind one model part. The map color tint is what makes the red
+     * hurt flash applied by the entity holder show up, instead of the component being silently
+     * ignored; it has to default to white, else every unflashed part would be tinted dark brown.
+     */
+    private static ItemAsset partAsset(Identifier model) {
+        List<ItemTintSource> tints = model.getPath().contains("/leather/")
+                // Leather's texture is baked to be dyed, so an undyed piece has to be tinted with the
+                // colour vanilla defaults to or it comes out white.
+                ? List.of(new DyeTintSource(DEFAULT_LEATHER_COLOR), new MapColorTintSource(0xFFFFFF))
+                : List.of(new MapColorTintSource(0xFFFFFF));
+        return new ItemAsset(new BasicItemModel(model, tints), new ItemAsset.Properties(true, true));
+    }
+
     private static Identifier heldId(String name) {
         return Identifier.fromNamespaceAndPath(MOD_ID, name);
     }
@@ -108,6 +128,9 @@ public final class GuardResourcePack {
     private static void build(ResourcePackBuilder builder) {
         var atlas = AtlasAsset.builder();
         for (var model : GuardModels.ALL) {
+            model.generateAssets(builder::addData, atlas);
+        }
+        for (var model : GuardArmorModels.ALL) {
             model.generateAssets(builder::addData, atlas);
         }
 

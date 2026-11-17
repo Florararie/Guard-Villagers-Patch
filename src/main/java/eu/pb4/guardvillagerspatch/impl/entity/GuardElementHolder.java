@@ -6,6 +6,8 @@ import eu.pb4.factorytools.api.virtualentity.ItemDisplayElementUtil;
 import eu.pb4.factorytools.api.virtualentity.emuvanilla.EntityModelTransforms;
 import eu.pb4.factorytools.api.virtualentity.emuvanilla.PolyModelInstance;
 import eu.pb4.factorytools.api.virtualentity.emuvanilla.model.ModelPart;
+import eu.pb4.guardvillagerspatch.impl.entity.model.GuardArmorModel;
+import eu.pb4.guardvillagerspatch.impl.entity.model.GuardArmorModels;
 import eu.pb4.guardvillagerspatch.impl.entity.model.GuardModels;
 import eu.pb4.guardvillagerspatch.impl.entity.model.GuardVillagerModel;
 import eu.pb4.polymer.virtualentity.api.ElementHolder;
@@ -25,7 +27,9 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fStack;
 
+import java.util.ArrayList;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -45,7 +49,10 @@ public class GuardElementHolder extends ElementHolder {
     public final InteractionElement interaction;
     public final LeadAttachmentElement leadAttachment = new LeadAttachmentElement();
 
-    private final Map<ModelPart, ItemDisplayElement> elements = new IdentityHashMap<>();
+    private final Map<ModelPart, ItemDisplayElement> partElements = new IdentityHashMap<>();
+    private final Map<ModelPart, PolyModelInstance<?>> partOwners = new IdentityHashMap<>();
+    private final List<PolyModelInstance<GuardArmorModel>> armor = new ArrayList<>();
+    private final List<PolyModelInstance<GuardArmorModel>> previousArmor = new ArrayList<>();
     private final ItemDisplayElement mainHandItem;
     private final ItemDisplayElement offHandItem;
     private PolyModelInstance<GuardVillagerModel> model;
@@ -93,23 +100,14 @@ public class GuardElementHolder extends ElementHolder {
             return;
         }
 
-        for (var element : this.elements.values()) {
+        // Every part display is rebuilt on the next tick, from whichever models are in use then.
+        for (var element : this.partElements.values()) {
             this.removeElement(element);
         }
-        this.elements.clear();
+        this.partElements.clear();
+        this.partOwners.clear();
 
         this.model = newModel;
-        for (var part : newModel.model().allParts()) {
-            var stack = newModel.modelParts().apply(part);
-            if (stack == null) {
-                continue;
-            }
-
-            var element = EntityModelHelper.createItemDisplay(stack.get());
-            updateDisplayElement(element);
-            this.elements.put(part, element);
-            this.addElement(element);
-        }
 
         if (!this.noTick) {
             this.tick();
@@ -166,22 +164,53 @@ public class GuardElementHolder extends ElementHolder {
         EntityModelTransforms.livingEntityTransform(this.entity, STACK, matrix4f -> matrix4f.scale(GUARD_SCALE));
 
         this.model.model().setupAnim(this.entity);
-        this.model.model().render(STACK, this::updateElement);
 
         boolean newHurt = this.entity.hurtTime > 0 || this.entity.deathTime > 0;
         if (this.hurt != newHurt) {
             this.hurt = newHurt;
-            var parts = newHurt ? this.model.damagedModelParts() : this.model.modelParts();
-            for (var entry : this.elements.entrySet()) {
-                var stack = parts.apply(entry.getKey());
-                if (stack != null) {
-                    entry.getValue().setItem(stack.get());
-                }
-            }
+            refreshPartItems();
+        }
+
+        updateArmor();
+
+        this.model.model().render(STACK, (part, matrix, hidden) -> updateElement(this.model, part, matrix, hidden));
+        for (var instance : this.armor) {
+            instance.model().render(STACK, (part, matrix, hidden) -> updateElement(instance, part, matrix, hidden));
         }
 
         renderHeldItems();
         STACK.popMatrix();
+    }
+
+    /**
+     * Picks the armor shells to draw, then drops the displays of any shell that is no longer worn or
+     * has been swapped for another material. Those parts are not walked while they are off, so their
+     * displays would otherwise stay in the holder forever.
+     */
+    private void updateArmor() {
+        this.previousArmor.clear();
+        this.previousArmor.addAll(this.armor);
+        this.armor.clear();
+
+        if (!this.entity.isInvisible()) {
+            GuardArmorModels.collect(this.entity, this.armor);
+            for (var instance : this.armor) {
+                instance.model().copyPose(this.model.model());
+            }
+        }
+
+        for (var instance : this.previousArmor) {
+            if (this.armor.contains(instance)) {
+                continue;
+            }
+            for (var part : instance.model().allParts()) {
+                var element = this.partElements.remove(part);
+                this.partOwners.remove(part);
+                if (element != null) {
+                    this.removeElement(element);
+                }
+            }
+        }
     }
 
     private void renderHeldItems() {
@@ -250,26 +279,64 @@ public class GuardElementHolder extends ElementHolder {
         element.startInterpolationIfDirty();
     }
 
-    private void updateElement(ModelPart part, Matrix4f matrix, boolean hidden) {
-        var element = this.elements.get(part);
-        if (element == null) {
+    /**
+     * Places one model part's display. A part with no geometry of its own, like the model's root,
+     * has no model to draw and is skipped; a part the model hides has its display taken out of the
+     * holder so the client stops drawing it.
+     */
+    private void updateElement(PolyModelInstance<?> owner, ModelPart part, Matrix4f matrix, boolean hidden) {
+        var element = this.partElements.get(part);
+        var current = this.getElements();
+
+        if (hidden) {
+            if (element != null && current.contains(element)) {
+                this.removeElement(element);
+            }
             return;
         }
 
-        var current = this.getElements();
-        if (current.contains(element) && hidden) {
-            this.removeElement(element);
-        } else if (!current.contains(element) && !hidden) {
+        if (element == null) {
+            var stack = partStack(owner, part);
+            if (stack == null) {
+                return;
+            }
+            element = EntityModelHelper.createItemDisplay(stack);
+            this.partElements.put(part, element);
+            this.partOwners.put(part, owner);
             this.addElement(element);
             element.setTeleportDuration(0);
-        } else if (!hidden) {
+        } else if (!current.contains(element)) {
+            this.addElement(element);
+            element.setTeleportDuration(0);
+        } else {
             element.setTeleportDuration(TELEPORT_DURATION);
         }
 
-        if (!hidden) {
-            element.setTransformation(matrix);
-            updateDisplayElement(element);
-            element.startInterpolationIfDirty();
+        element.setTransformation(matrix);
+        updateDisplayElement(element);
+        element.startInterpolationIfDirty();
+    }
+
+    private ItemStack partStack(PolyModelInstance<?> owner, ModelPart part) {
+        var parts = this.hurt ? owner.damagedModelParts() : owner.modelParts();
+        var stack = parts.apply(part);
+        return stack != null ? stack.get() : null;
+    }
+
+    /**
+     * Swaps every drawn part between its normal and its hurt-flashed item. The armor is drawn from
+     * its own models, so they have to be walked as well as the guard's own.
+     */
+    private void refreshPartItems() {
+        for (var entry : this.partElements.entrySet()) {
+            var owner = this.partOwners.get(entry.getKey());
+            if (owner == null) {
+                continue;
+            }
+            var stack = partStack(owner, entry.getKey());
+            if (stack != null) {
+                entry.getValue().setItem(stack);
+            }
         }
     }
 
