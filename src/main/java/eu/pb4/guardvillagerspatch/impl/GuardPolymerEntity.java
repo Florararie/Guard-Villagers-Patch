@@ -15,6 +15,7 @@ import net.minecraft.network.protocol.game.ClientboundSetEntityLinkPacket;
 import net.minecraft.network.protocol.game.ClientboundSetPassengersPacket;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntityType;
 
@@ -36,7 +37,12 @@ public class GuardPolymerEntity implements PolymerEntity {
 
     public GuardPolymerEntity(GuardEntity guard) {
         this.guard = guard;
-        IdentifiedUniqueEntityAttachment.ofTicking(MODEL, new GuardElementHolder(guard), guard);
+        // The client half of an integrated server builds guards too, and those live in a
+        // ClientLevel. A virtual entity can only be attached through a ServerLevel's tracker entry,
+        // so attaching there throws a ClassCastException and takes the client down.
+        if (guard.level() instanceof ServerLevel) {
+            IdentifiedUniqueEntityAttachment.ofTicking(MODEL, new GuardElementHolder(guard), guard);
+        }
     }
 
     @Override
